@@ -69,7 +69,7 @@ pub fn search_worker(query_rx: Receiver<String>, result_tx: Sender<Vec<String>>)
         }
 
         // Process only the most recent query
-        let mut words = word_trie.get_words(&query);
+        let mut words = word_trie.get_words(&query).into_iter().collect::<Vec<_>>();
         words.sort_by_key(|word| cmp::Reverse(word.len()));
 
         if result_tx.send(words).is_err() {
