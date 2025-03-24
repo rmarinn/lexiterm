@@ -1,5 +1,5 @@
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 
 #[derive(Default)]
@@ -47,8 +47,8 @@ impl WordTrie {
     }
 
     /// Gets all the words that could be built using the given letters.
-    pub fn get_words(&self, letters: &str) -> BTreeSet<String> {
-        let mut words = BTreeSet::new();
+    pub fn get_words(&self, letters: &str) -> Vec<String> {
+        let mut words = Vec::new();
 
         // Create a frequency map of the available letters
         let letters = letters.chars().fold(HashMap::new(), |mut acc, ch| {
@@ -65,18 +65,20 @@ impl WordTrie {
         let start_path = self.root.start_path(letters);
         let mut search_stack = VecDeque::from([start_path]);
 
-        // PERF: we can further optimize this by pruning the duplicate paths that
-        // get generated
         while let Some(path) = search_stack.pop_back() {
             if path.node.is_word {
-                words.insert(path.word_buf.clone());
+                words.push(path.word_buf.clone());
             }
 
-            for next_path in step_trie(&path).into_iter() {
-                search_stack.push_back(next_path);
-            }
+            step_trie(&path, &mut search_stack);
         }
 
+        words
+    }
+
+    pub fn get_words_sorted(&self, letters: &str) -> Vec<String> {
+        let mut words = self.get_words(letters);
+        words.sort();
         words
     }
 }
@@ -88,14 +90,13 @@ struct Path<'a> {
     word_buf: String,
 }
 
-/// Steps through one layer of the Trie using the given letters
-fn step_trie<'a>(path: &Path<'a>) -> VecDeque<Path<'a>> {
+/// Steps through one layer of the Trie using the given letters and return
+/// the next possible paths
+fn step_trie<'a>(path: &Path<'a>, search_stack: &mut VecDeque<Path<'a>>) {
     let children = &path.node.children;
     let letters = &path.remaining_letters;
 
-    let mut next_paths = VecDeque::new();
-
-    for (ch, _count) in letters.iter() {
+    for ch in letters.keys() {
         // handle wildcard
         if *ch == '*' {
             let remaining_letters = letters.clone();
@@ -104,11 +105,14 @@ fn step_trie<'a>(path: &Path<'a>) -> VecDeque<Path<'a>> {
                 continue;
             };
 
-            for (ch, child) in children.iter() {
+            for (ch, child) in children
+                .iter()
+                .filter(|c| !remaining_letters.contains_key(c.0))
+            {
                 let mut word_buf = path.word_buf.clone();
                 word_buf.push(*ch);
 
-                next_paths.push_back(Path {
+                search_stack.push_back(Path {
                     node: child,
                     remaining_letters: remaining_letters.clone(),
                     word_buf,
@@ -129,15 +133,13 @@ fn step_trie<'a>(path: &Path<'a>) -> VecDeque<Path<'a>> {
             let mut word_buf = path.word_buf.clone();
             word_buf.push(*ch);
 
-            next_paths.push_back(Path {
+            search_stack.push_back(Path {
                 node: child,
                 remaining_letters,
                 word_buf,
             });
         }
     }
-
-    next_paths
 }
 
 fn decrement_count(
@@ -203,22 +205,14 @@ mod test {
             word_buf: "".to_string(),
         };
 
-        let paths = step_trie(&initial_path);
+        let mut paths = VecDeque::new();
+        step_trie(&initial_path, &mut paths);
 
-        // assert_eq!(letters, HashMap::from([('a', 1)]));
-
-        let expected_paths = [
-            Path {
-                node: root.children.get(&'c').unwrap(),
-                remaining_letters: HashMap::from([('a', 1), ('*', 1)]),
-                word_buf: "c".to_string(),
-            },
-            Path {
-                node: root.children.get(&'c').unwrap(),
-                remaining_letters: HashMap::from([('c', 1), ('a', 1)]),
-                word_buf: "c".to_string(),
-            },
-        ];
+        let expected_paths = [Path {
+            node: root.children.get(&'c').unwrap(),
+            remaining_letters: HashMap::from([('a', 1), ('*', 1)]),
+            word_buf: "c".to_string(),
+        }];
         for expected_path in expected_paths.iter() {
             assert!(
                 paths.contains(expected_path),
@@ -230,7 +224,7 @@ mod test {
     }
 
     #[test]
-    fn can_insert() {
+    fn test_insert() {
         let test_word = "radar";
         let mut trie = WordTrie::default();
 
@@ -248,41 +242,47 @@ mod test {
     }
 
     #[test]
-    pub fn can_get_words() {
+    pub fn test_get_words() {
         let mut trie = WordTrie::default();
         let words = ["rad", "radar", "radical", "radiation", "dart"];
         words.iter().for_each(|word| trie.insert(word));
 
         assert_eq!(
-            trie.get_words("radar").into_iter().collect::<Vec<_>>(),
+            trie.get_words_sorted("radar")
+                .into_iter()
+                .collect::<Vec<_>>(),
             ["rad", "radar"]
         );
         assert_eq!(
-            trie.get_words("radart").into_iter().collect::<Vec<_>>(),
+            trie.get_words_sorted("radart")
+                .into_iter()
+                .collect::<Vec<_>>(),
             ["dart", "rad", "radar"]
         );
     }
 
     #[test]
-    pub fn should_handle_wildcards() {
+    pub fn test_handle_wildcards() {
         let mut trie = WordTrie::default();
         let words = ["cam", "cab", "cams", "cabs"];
         words.iter().for_each(|word| trie.insert(word));
 
         assert_eq!(
-            trie.get_words("ca*").into_iter().collect::<Vec<_>>(),
+            trie.get_words_sorted("ca*").into_iter().collect::<Vec<_>>(),
             ["cab", "cam"]
         );
         assert_eq!(
-            trie.get_words("*ca").into_iter().collect::<Vec<_>>(),
+            trie.get_words_sorted("*ca").into_iter().collect::<Vec<_>>(),
             ["cab", "cam"]
         );
         assert_eq!(
-            trie.get_words("c*a").into_iter().collect::<Vec<_>>(),
+            trie.get_words_sorted("c*a").into_iter().collect::<Vec<_>>(),
             ["cab", "cam"]
         );
         assert_eq!(
-            trie.get_words("ca**").into_iter().collect::<Vec<_>>(),
+            trie.get_words_sorted("ca**")
+                .into_iter()
+                .collect::<Vec<_>>(),
             ["cab", "cabs", "cam", "cams"]
         );
     }
