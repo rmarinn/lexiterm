@@ -7,10 +7,8 @@
 //! are ignored except for the most recent one within a short time window.
 
 use crossbeam::channel::{Receiver, Sender};
-use std::cmp;
-use std::path::Path;
 use std::time::Duration;
-use word_trie::WordTrie;
+use word_trie::ScoredWordTrie;
 
 /// The debounce duration for processing search queries.
 ///
@@ -54,8 +52,12 @@ static DEBOUNCE_DUR: Duration = Duration::from_millis(100);
 ///
 /// query_tx.send("hello".to_string()).unwrap();
 /// ```
-pub fn search_worker(query_rx: Receiver<String>, result_tx: Sender<Vec<String>>) {
-    let word_trie = WordTrie::new_from_file(Path::new("../words.txt"));
+pub fn search_worker(
+    word_trie: ScoredWordTrie,
+    query_rx: Receiver<String>,
+    result_tx: Sender<Vec<String>>,
+) {
+    // let word_trie = WordTrie::new_from_file(Path::new("../words.txt"));
 
     loop {
         // Block until at least one query arrives
@@ -69,8 +71,11 @@ pub fn search_worker(query_rx: Receiver<String>, result_tx: Sender<Vec<String>>)
         }
 
         // Process only the most recent query
-        let mut words = word_trie.get_words(&query);
-        words.sort_by_key(|word| cmp::Reverse(word.len()));
+        let words = word_trie
+            .get_words_sorted(&query)
+            .into_iter()
+            .map(|(word, score)| format!("{}:{}", word, score))
+            .collect();
 
         if result_tx.send(words).is_err() {
             break;

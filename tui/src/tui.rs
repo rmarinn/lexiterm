@@ -79,7 +79,7 @@ fn render_callback(frame: &mut Frame, input_letters: &str, output_words: &[Strin
         input_right,
     );
     frame.render_widget(
-        Paragraph::new(output_words.join(" "))
+        Paragraph::new(output_words.join(", "))
             .wrap(Wrap { trim: false })
             .block(Block::bordered().title("words")),
         output_area,

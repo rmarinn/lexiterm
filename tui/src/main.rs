@@ -6,15 +6,20 @@ use anyhow::{anyhow, Result};
 use crossbeam::channel;
 use input::listen_and_process;
 use search_worker::search_worker;
-use std::thread;
+use std::{path::Path, thread};
 use tui::Tui;
+use word_trie::ScoredWordTrie;
 
 fn main() -> Result<()> {
     let (query_tx, query_rx) = channel::bounded::<String>(0);
     let (result_tx, result_rx) = channel::bounded::<Vec<String>>(0);
 
+    let words_file_path = Path::new("../words.txt");
+    let scores_file_path = Path::new("../char_scores.txt");
+    let word_trie = ScoredWordTrie::new_from_files(words_file_path, scores_file_path)?;
+
     let search_handle = thread::spawn(move || {
-        search_worker(query_rx, result_tx);
+        search_worker(word_trie, query_rx, result_tx);
     });
 
     let tui = Tui::default();
