@@ -6,6 +6,7 @@
 //! The worker implements **debouncing**, ensuring that rapid consecutive queries
 //! are ignored except for the most recent one within a short time window.
 
+use anyhow::{anyhow, Result};
 use crossbeam::channel::{Receiver, Sender};
 use std::time::Duration;
 use word_trie::ScoredWordTrie;
@@ -15,50 +16,27 @@ use word_trie::ScoredWordTrie;
 /// If a new query arrives within this duration, the previous query is discarded.
 static DEBOUNCE_DUR: Duration = Duration::from_millis(100);
 
+#[derive(Debug)]
+pub struct QueryRequest {
+    pub letters: String,
+    pub regex: String,
+}
+
+#[derive(Debug)]
+pub struct QueryResponse {
+    pub words: Vec<String>,
+}
+
 /// Listens for incoming search queries and processes only the most recent one.
 ///
 /// This function continuously receives search queries from `query_rx`, applies
 /// **debouncing** to ignore outdated queries, processes the latest one using a
 /// [`WordTrie`], and then sends the sorted results back through `result_tx`.
-///
-/// # Arguments
-///
-/// * `query_rx` - A channel receiver for incoming search queries.
-/// * `result_tx` - A channel sender to send the processed search results.
-///
-/// # Behavior
-///
-/// - **Blocking:** This function runs indefinitely, waiting for new queries.
-/// - **Debouncing:** If multiple queries arrive within [`DEBOUNCE_DUR`], only the latest one is processed.
-/// - **Sorting:** Results are sorted in descending order of word length.
-///
-/// # Termination
-///
-/// - If `query_rx` is closed, the function exits.
-/// - If `result_tx` is closed, the function exits.
-///
-/// # Example
-///
-/// ```no_run
-/// use crossbeam::channel;
-/// use std::thread;
-///
-/// let (query_tx, query_rx) = channel::bounded::<String>(100);
-/// let (result_tx, result_rx) = channel::bounded::<Vec<String>>(10);
-///
-/// thread::spawn(move || {
-///     search_worker(query_rx, result_tx);
-/// });
-///
-/// query_tx.send("hello".to_string()).unwrap();
-/// ```
 pub fn search_worker(
     word_trie: ScoredWordTrie,
-    query_rx: Receiver<String>,
-    result_tx: Sender<Vec<String>>,
+    query_rx: Receiver<QueryRequest>,
+    result_tx: Sender<Result<QueryResponse>>,
 ) {
-    // let word_trie = WordTrie::new_from_file(Path::new("../words.txt"));
-
     loop {
         // Block until at least one query arrives
         let Ok(mut query) = query_rx.recv() else {
@@ -71,13 +49,27 @@ pub fn search_worker(
         }
 
         // Process only the most recent query
-        let words = word_trie
-            .get_words(&query)
-            .into_iter()
-            .map(|(word, score)| format!("{}:{}", word, score))
-            .collect();
+        let words = if query.regex.is_empty() {
+            Ok(word_trie
+                .get_words(&query.letters)
+                .into_iter()
+                .map(|(word, score)| format!("{}:{}", word, score))
+                .collect())
+        } else {
+            word_trie
+                .get_word_matches(&query.letters, &query.regex)
+                .map(|words| {
+                    words
+                        .into_iter()
+                        .map(|(word, score)| format!("{}:{}", word, score))
+                        .collect()
+                })
+                .map_err(|e| anyhow!("invalid regex: {e}"))
+        };
 
-        if result_tx.send(words).is_err() {
+        let resp = words.map(|words| QueryResponse { words });
+
+        if result_tx.send(resp).is_err() {
             break;
         }
     }

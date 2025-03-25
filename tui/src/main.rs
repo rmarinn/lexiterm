@@ -5,14 +5,14 @@ mod tui;
 use anyhow::{anyhow, Result};
 use crossbeam::channel;
 use input::listen_and_process;
-use search_worker::search_worker;
+use search_worker::{search_worker, QueryRequest, QueryResponse};
 use std::{path::Path, thread};
 use tui::Tui;
 use word_trie::ScoredWordTrie;
 
 fn main() -> Result<()> {
-    let (query_tx, query_rx) = channel::bounded::<String>(0);
-    let (result_tx, result_rx) = channel::bounded::<Vec<String>>(0);
+    let (query_tx, query_rx) = channel::bounded::<QueryRequest>(0);
+    let (result_tx, result_rx) = channel::bounded::<Result<QueryResponse>>(0);
 
     let words_file_path = Path::new("../words.txt");
     let scores_file_path = Path::new("../char_scores.txt");

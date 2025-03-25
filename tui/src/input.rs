@@ -8,25 +8,41 @@ use crossbeam::channel::{Receiver, Sender, TrySendError};
 use crossterm::event::{self, Event, KeyCode};
 use std::time::{Duration, Instant};
 
-use crate::tui::Tui;
+use crate::{
+    search_worker::{QueryRequest, QueryResponse},
+    tui::Tui,
+};
 
 /// Represents different types of input events from the terminal.
 ///
 /// This enum categorizes key events into meaningful actions for the application.
 enum InputEvent {
-    /// No operation (ignored event).
     NoOp,
-    /// Request to exit the application.
     Exit,
-    /// Append a character to the input.
-    AppendCharToInput(char),
-    /// Remove the last character from the input.
+    AppendCharToInputLetters(char),
     BackSpace,
+    SetInputField(InputField),
+}
+
+#[derive(Default)]
+pub struct AppState {
+    pub letters: String,
+    pub regex: String,
+    pub regex_err: Option<String>,
+    pub words: Vec<String>,
+    pub input_field: InputField,
+}
+
+#[derive(Default, Clone, Copy)]
+pub enum InputField {
+    #[default]
+    Letters,
+    Regex,
 }
 
 /// Listens for terminal input events and updates the UI accordingly.
 ///
-/// This function continuously listens for key events, processes them, and sends search 
+/// This function continuously listens for key events, processes them, and sends search
 /// queries to the worker thread while updating the terminal UI with results.
 ///
 /// # Arguments
@@ -40,17 +56,16 @@ enum InputEvent {
 /// Returns an error if drawing the UI fails or an unexpected issue occurs.
 pub fn listen_and_process(
     tui: &Tui,
-    query_tx: &Sender<String>,
-    result_rx: &Receiver<Vec<String>>,
+    query_tx: &Sender<QueryRequest>,
+    result_rx: &Receiver<Result<QueryResponse>>,
 ) -> Result<()> {
     // handle input events
-    let mut input_letters = String::new();
-    let mut output_words = Vec::new();
-    tui.draw_frame(&input_letters, &output_words)?;
+    let mut state = AppState::default();
+    tui.draw_frame(&state)?;
 
     loop {
         // process terminal events
-        match process_event(&mut input_letters, query_tx) {
+        match process_event(&mut state, query_tx) {
             Ok(true) => break, // exit if requested,
             Ok(false) => {}
             Err(e) => {
@@ -59,14 +74,31 @@ pub fn listen_and_process(
         }
 
         // Check if the worker thread has responded
-        while let Ok(words) = result_rx.try_recv() {
-            output_words = words;
+        while let Ok(query_resp) = result_rx.try_recv() {
+            match query_resp {
+                Ok(resp) => {
+                    state.words = resp.words;
+                    state.regex_err = None;
+                }
+                Err(err) => {
+                    state.regex_err = Some(err.to_string());
+                }
+            }
         }
 
-        tui.draw_frame(&input_letters, &output_words)?;
+        tui.draw_frame(&state)?;
     }
 
     Ok(())
+}
+
+impl From<&mut AppState> for QueryRequest {
+    fn from(state: &mut AppState) -> Self {
+        Self {
+            letters: state.letters.clone(),
+            regex: state.regex.clone(),
+        }
+    }
 }
 
 /// Polls for keyboard input events and processes them.
@@ -88,7 +120,7 @@ pub fn listen_and_process(
 /// # Errors
 ///
 /// Returns an error if reading input events or sending queries fails.
-pub fn process_event(input_letters: &mut String, query_tx: &Sender<String>) -> Result<bool> {
+pub fn process_event(state: &mut AppState, query_tx: &Sender<QueryRequest>) -> Result<bool> {
     static POLL_TIMEOUT: Duration = Duration::from_millis(100);
     static BATCH_TIMEOUT: Duration = Duration::from_millis(50);
 
@@ -102,15 +134,24 @@ pub fn process_event(input_letters: &mut String, query_tx: &Sender<String>) -> R
 
             match event {
                 InputEvent::Exit => return Ok(true),
-                InputEvent::AppendCharToInput(ch) => {
-                    input_letters.push(ch);
+                InputEvent::AppendCharToInputLetters(ch) => {
+                    match state.input_field {
+                        InputField::Letters => state.letters.push(ch),
+                        InputField::Regex => state.regex.push(ch),
+                    };
                     input_updated = true;
                 }
                 InputEvent::BackSpace => {
-                    input_letters.pop();
+                    match state.input_field {
+                        InputField::Letters => state.letters.pop(),
+                        InputField::Regex => state.regex.pop(),
+                    };
                     input_updated = true;
                 }
                 InputEvent::NoOp => {}
+                InputEvent::SetInputField(input_field) => {
+                    state.input_field = input_field;
+                }
             }
         } else {
             // Exit loop early if there are no more events
@@ -119,11 +160,11 @@ pub fn process_event(input_letters: &mut String, query_tx: &Sender<String>) -> R
     }
 
     if input_updated {
-        if let Err(err) = query_tx.try_send(input_letters.clone()) {
+        if let Err(err) = query_tx.try_send(state.into()) {
             match err {
                 TrySendError::Full(_) => {}
                 TrySendError::Disconnected(err) => {
-                    return Err(anyhow!("Worker unexpectedly disconnected: {err}"))
+                    return Err(anyhow!("Worker unexpectedly disconnected: {err:?}"))
                 }
             }
         }
@@ -137,8 +178,10 @@ impl From<crossterm::event::Event> for InputEvent {
         match ev {
             Event::Key(key_event) => match key_event.code {
                 KeyCode::Backspace => Self::BackSpace,
-                KeyCode::Char(ch) => Self::AppendCharToInput(ch),
+                KeyCode::Char(ch) => Self::AppendCharToInputLetters(ch),
                 KeyCode::Esc => Self::Exit,
+                KeyCode::Left => Self::SetInputField(InputField::Letters),
+                KeyCode::Right => Self::SetInputField(InputField::Regex),
                 _ => Self::NoOp,
             },
             _ => Self::NoOp,
