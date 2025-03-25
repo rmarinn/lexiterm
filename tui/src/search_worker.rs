@@ -72,7 +72,7 @@ pub fn search_worker(
 
         // Process only the most recent query
         let words = word_trie
-            .get_words_sorted(&query)
+            .get_words(&query)
             .into_iter()
             .map(|(word, score)| format!("{}:{}", word, score))
             .collect();
