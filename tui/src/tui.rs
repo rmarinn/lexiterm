@@ -3,7 +3,7 @@
 //! This module initializes and manages the terminal UI, rendering the input and output
 //! sections dynamically.
 
-use crate::input::{AppState, InputField};
+use crate::input::{AppState, PanelKind};
 use anyhow::Result;
 use ratatui::layout::{Constraint::*, Layout};
 use ratatui::prelude::CrosstermBackend;
@@ -55,22 +55,6 @@ impl Tui {
     }
 }
 
-trait HighlightIf {
-    fn highlight_if(self, condition: bool) -> Self;
-}
-
-impl HighlightIf for Block<'_> {
-    fn highlight_if(self, condition: bool) -> Self {
-        static YELLOW: LazyLock<Style> = LazyLock::new(|| Style::new().yellow());
-
-        if condition {
-            self.border_style(*YELLOW)
-        } else {
-            self
-        }
-    }
-}
-
 /// Handles the layout and rendering of UI components.
 fn render_callback(frame: &mut Frame, state: &AppState) {
     let padding = Block::default().padding(Padding::uniform(1));
@@ -79,30 +63,71 @@ fn render_callback(frame: &mut Frame, state: &AppState) {
     let [top, bottom] = Layout::vertical([Length(3), Fill(1)]).areas(padded_area);
     let [input_left, input_right] = Layout::horizontal([Fill(1), Fill(1)]).areas(top);
 
+    let hints = state.panel_mngr.hints();
+
+    let letters_title = hints
+        .get(&PanelKind::Letters)
+        .map(|hint| format!("Letters ({hint})"))
+        .unwrap_or_else(|| "Letters".to_string());
     let letters_block = Block::bordered()
-        .title("Letters (←)")
-        .highlight_if(matches!(state.input_field, InputField::Letters));
+        .title(letters_title)
+        .highlight_yellow_if(matches!(state.panel_mngr.selected(), PanelKind::Letters));
     frame.render_widget(
         Paragraph::new(state.letters.as_str()).block(letters_block),
         input_left,
     );
 
-    let regex_title = state.regex_err.as_ref().map_or_else(
-        || "Regex (→)".to_string(),
-        |err| format!("Regex (err: {err})"),
-    );
+    let regex_title = hints
+        .get(&PanelKind::Regex)
+        .map(|hint| format!("Regex ({hint})"))
+        .unwrap_or_else(|| "Regex".to_string());
     let regex_block = Block::bordered()
         .title(regex_title)
-        .highlight_if(matches!(state.input_field, InputField::Regex));
+        .highlight_yellow_if(matches!(state.panel_mngr.selected(), PanelKind::Regex))
+        .highlight_red_if(state.regex_err.is_some());
     frame.render_widget(
         Paragraph::new(state.regex.as_str()).block(regex_block),
         input_right,
     );
 
+    let words_title = hints
+        .get(&PanelKind::Words)
+        .map(|hint| format!("Words ({hint})"))
+        .unwrap_or_else(|| "Words".to_string());
+    let word_block = Block::bordered()
+        .title(words_title)
+        .highlight_yellow_if(matches!(state.panel_mngr.selected(), PanelKind::Words));
     frame.render_widget(
         Paragraph::new(state.words.join(", "))
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title("words")),
+            .block(word_block),
         bottom,
     );
+}
+
+trait HighlightIf {
+    fn highlight_yellow_if(self, condition: bool) -> Self;
+    fn highlight_red_if(self, condition: bool) -> Self;
+}
+
+impl HighlightIf for Block<'_> {
+    fn highlight_yellow_if(self, condition: bool) -> Self {
+        static YELLOW: LazyLock<Style> = LazyLock::new(|| Style::new().yellow());
+
+        if condition {
+            self.border_style(*YELLOW)
+        } else {
+            self
+        }
+    }
+
+    fn highlight_red_if(self, condition: bool) -> Self {
+        static RED: LazyLock<Style> = LazyLock::new(|| Style::new().red());
+
+        if condition {
+            self.border_style(*RED)
+        } else {
+            self
+        }
+    }
 }

@@ -625,6 +625,7 @@ dependencies = [
  "anyhow",
  "crossbeam",
  "crossterm",
+ "pretty_assertions",
  "ratatui",
  "word_trie",
 ]

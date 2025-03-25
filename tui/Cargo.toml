@@ -9,3 +9,6 @@ crossbeam = "0.8.4"
 crossterm = "0.28.1"
 ratatui = "0.29.0"
 word_trie = { "path" = "../word_trie" }
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

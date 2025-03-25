@@ -1,17 +1,18 @@
 //! Handles user input processing and event polling using `crossterm`.
 //!
-//! This module listens for terminal events, updates input state, and sends search queries
-//! to the worker thread while handling responses.
+//! This module listens for terminal events, updates input state, and sends search
+//! queries to the worker thread while handling responses.
 
+mod panel_manager;
+
+use crate::search_worker::{QueryRequest, QueryResponse};
+use crate::tui::Tui;
 use anyhow::{anyhow, Result};
 use crossbeam::channel::{Receiver, Sender, TrySendError};
 use crossterm::event::{self, Event, KeyCode};
 use std::time::{Duration, Instant};
 
-use crate::{
-    search_worker::{QueryRequest, QueryResponse},
-    tui::Tui,
-};
+pub use panel_manager::*;
 
 /// Represents different types of input events from the terminal.
 ///
@@ -21,7 +22,7 @@ enum InputEvent {
     Exit,
     AppendCharToInputLetters(char),
     BackSpace,
-    SetInputField(InputField),
+    SelectPanel(Direction),
 }
 
 #[derive(Default)]
@@ -30,30 +31,13 @@ pub struct AppState {
     pub regex: String,
     pub regex_err: Option<String>,
     pub words: Vec<String>,
-    pub input_field: InputField,
-}
-
-#[derive(Default, Clone, Copy)]
-pub enum InputField {
-    #[default]
-    Letters,
-    Regex,
+    pub panel_mngr: PanelManager,
 }
 
 /// Listens for terminal input events and updates the UI accordingly.
 ///
 /// This function continuously listens for key events, processes them, and sends search
 /// queries to the worker thread while updating the terminal UI with results.
-///
-/// # Arguments
-///
-/// * `tui` - A reference to the [`Tui`] instance for rendering updates.
-/// * `query_tx` - A sender channel to pass search queries to the worker thread.
-/// * `result_rx` - A receiver channel to receive processed search results.
-///
-/// # Errors
-///
-/// Returns an error if drawing the UI fails or an unexpected issue occurs.
 pub fn listen_and_process(
     tui: &Tui,
     query_tx: &Sender<QueryRequest>,
@@ -135,22 +119,28 @@ pub fn process_event(state: &mut AppState, query_tx: &Sender<QueryRequest>) -> R
             match event {
                 InputEvent::Exit => return Ok(true),
                 InputEvent::AppendCharToInputLetters(ch) => {
-                    match state.input_field {
-                        InputField::Letters => state.letters.push(ch),
-                        InputField::Regex => state.regex.push(ch),
+                    match state.panel_mngr.selected() {
+                        PanelKind::Letters => state.letters.push(ch),
+                        PanelKind::Regex => state.regex.push(ch),
+                        _ => continue,
                     };
                     input_updated = true;
                 }
                 InputEvent::BackSpace => {
-                    match state.input_field {
-                        InputField::Letters => state.letters.pop(),
-                        InputField::Regex => state.regex.pop(),
+                    match state.panel_mngr.selected() {
+                        PanelKind::Letters => {
+                            state.letters.pop();
+                        }
+                        PanelKind::Regex => {
+                            state.regex.pop();
+                        }
+                        _ => continue,
                     };
                     input_updated = true;
                 }
                 InputEvent::NoOp => {}
-                InputEvent::SetInputField(input_field) => {
-                    state.input_field = input_field;
+                InputEvent::SelectPanel(direction) => {
+                    state.panel_mngr.select_panel(direction);
                 }
             }
         } else {
@@ -180,8 +170,10 @@ impl From<crossterm::event::Event> for InputEvent {
                 KeyCode::Backspace => Self::BackSpace,
                 KeyCode::Char(ch) => Self::AppendCharToInputLetters(ch),
                 KeyCode::Esc => Self::Exit,
-                KeyCode::Left => Self::SetInputField(InputField::Letters),
-                KeyCode::Right => Self::SetInputField(InputField::Regex),
+                KeyCode::Left => Self::SelectPanel(Direction::Left),
+                KeyCode::Right => Self::SelectPanel(Direction::Right),
+                KeyCode::Up => Self::SelectPanel(Direction::Up),
+                KeyCode::Down => Self::SelectPanel(Direction::Down),
                 _ => Self::NoOp,
             },
             _ => Self::NoOp,
