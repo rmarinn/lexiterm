@@ -6,7 +6,6 @@
 //! The worker implements **debouncing**, ensuring that rapid consecutive queries
 //! are ignored except for the most recent one within a short time window.
 
-use anyhow::{anyhow, Result};
 use crossbeam::channel::{Receiver, Sender};
 use std::time::Duration;
 use word_trie::ScoredWordTrie;
@@ -18,8 +17,8 @@ static DEBOUNCE_DUR: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
 pub struct QueryRequest {
-    pub letters: String,
-    pub regex: String,
+    pub letters: Box<str>,
+    pub regex: Box<str>,
 }
 
 #[derive(Debug)]
@@ -35,7 +34,7 @@ pub struct QueryResponse {
 pub fn search_worker(
     word_trie: ScoredWordTrie,
     query_rx: Receiver<QueryRequest>,
-    result_tx: Sender<Result<QueryResponse>>,
+    result_tx: Sender<QueryResponse>,
 ) {
     loop {
         // Block until at least one query arrives
@@ -50,24 +49,30 @@ pub fn search_worker(
 
         // Process only the most recent query
         let words = if query.regex.is_empty() {
-            Ok(word_trie
+            word_trie
                 .get_words(&query.letters)
                 .into_iter()
                 .map(|(word, score)| format!("{}:{}", word, score))
-                .collect())
+                .collect::<Vec<_>>()
         } else {
-            word_trie
+            let Ok(words) = word_trie
                 .get_word_matches(&query.letters, &query.regex)
                 .map(|words| {
                     words
                         .into_iter()
                         .map(|(word, score)| format!("{}:{}", word, score))
-                        .collect()
+                        .collect::<Vec<_>>()
                 })
-                .map_err(|e| anyhow!("invalid regex: {e}"))
+            else {
+                // get_word_mataches will only return an error if the regex is invalid
+                // but we already make sure that the regex is valid so we can just ignore
+                // the Result::Err
+                continue;
+            };
+            words
         };
 
-        let resp = words.map(|words| QueryResponse { words });
+        let resp = QueryResponse { words };
 
         if result_tx.send(resp).is_err() {
             break;

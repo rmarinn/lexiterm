@@ -1,18 +1,21 @@
-mod input;
+mod app_manager;
+mod input_processing;
 mod search_worker;
-mod tui;
+mod tui_renderer;
 
 use anyhow::{anyhow, Result};
+use app_manager::*;
 use crossbeam::channel;
-use input::listen_and_process;
+use input_processing::listen_and_process;
 use search_worker::{search_worker, QueryRequest, QueryResponse};
-use std::{path::Path, thread};
-use tui::Tui;
+use std::path::Path;
+use std::thread;
+use tui_renderer::*;
 use word_trie::ScoredWordTrie;
 
 fn main() -> Result<()> {
-    let (query_tx, query_rx) = channel::bounded::<QueryRequest>(0);
-    let (result_tx, result_rx) = channel::bounded::<Result<QueryResponse>>(0);
+    let (query_tx, query_rx) = channel::bounded::<QueryRequest>(100);
+    let (result_tx, result_rx) = channel::bounded::<QueryResponse>(30);
 
     let words_file_path = Path::new("../words.txt");
     let scores_file_path = Path::new("../char_scores.txt");
@@ -22,9 +25,10 @@ fn main() -> Result<()> {
         search_worker(word_trie, query_rx, result_tx);
     });
 
-    let tui = Tui::default();
+    let state_mngr = AppManager::default();
+    let tui_renderer = TuiRenderer::default();
 
-    let listener_result = listen_and_process(&tui, &query_tx, &result_rx);
+    let listener_result = listen_and_process(state_mngr, tui_renderer, &query_tx, &result_rx);
 
     // Ensure worker sees EOF and exits
     drop(query_tx);

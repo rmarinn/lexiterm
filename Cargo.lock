@@ -627,6 +627,7 @@ dependencies = [
  "crossterm",
  "pretty_assertions",
  "ratatui",
+ "regex",
  "word_trie",
 ]
 
