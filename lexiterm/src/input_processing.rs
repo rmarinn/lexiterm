@@ -42,7 +42,7 @@ pub fn listen_and_process(
         }
 
         // Check if the worker thread has responded
-        if let Some(resp) = result_rx.try_recv().into_iter().last() {
+        if let Some(resp) = result_rx.try_recv().into_iter().next_back() {
             mngr.set_output_words(resp.words);
         }
 

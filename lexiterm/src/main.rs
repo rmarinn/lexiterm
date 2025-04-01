@@ -17,8 +17,8 @@ fn main() -> Result<()> {
     let (query_tx, query_rx) = channel::bounded::<QueryRequest>(100);
     let (result_tx, result_rx) = channel::bounded::<QueryResponse>(30);
 
-    let words_file_path = Path::new("../words.txt");
-    let scores_file_path = Path::new("../char_scores.txt");
+    let words_file_path = Path::new("./words.txt");
+    let scores_file_path = Path::new("./char_scores.txt");
     let word_trie = ScoredWordTrie::new_from_files(words_file_path, scores_file_path)?;
 
     let search_handle = thread::spawn(move || {
