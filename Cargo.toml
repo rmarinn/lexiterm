@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["lexiterm", "word_trie"]
+members = ["lexiterm", "lexicon"]

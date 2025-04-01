@@ -7,11 +7,11 @@ use anyhow::{anyhow, Result};
 use app_manager::*;
 use crossbeam::channel;
 use input_processing::listen_and_process;
+use lexicon::ScoredWordTrie;
 use search_worker::{search_worker, QueryRequest, QueryResponse};
 use std::path::Path;
 use std::thread;
 use tui_renderer::*;
-use word_trie::ScoredWordTrie;
 
 fn main() -> Result<()> {
     let (query_tx, query_rx) = channel::bounded::<QueryRequest>(100);

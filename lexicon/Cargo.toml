@@ -1,7 +1,8 @@
 [package]
-name = "word_trie"
+name = "lexicon"
 version = "0.1.0"
 edition = "2021"
+description = "A trie-based library used by lexiterm for searching words."
 
 [dependencies]
 regex = "1.11.1"

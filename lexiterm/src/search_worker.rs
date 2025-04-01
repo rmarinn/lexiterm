@@ -7,8 +7,8 @@
 //! are ignored except for the most recent one within a short time window.
 
 use crossbeam::channel::{Receiver, Sender};
+use lexicon::ScoredWordTrie;
 use std::time::Duration;
-use word_trie::ScoredWordTrie;
 
 /// The debounce duration for processing search queries.
 ///
