@@ -284,6 +284,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
+name = "lexiterm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossbeam",
+ "crossterm",
+ "pretty_assertions",
+ "ratatui",
+ "regex",
+ "word_trie",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.171"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -616,19 +629,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crossbeam",
- "crossterm",
- "pretty_assertions",
- "ratatui",
- "regex",
- "word_trie",
 ]
 
 [[package]]
