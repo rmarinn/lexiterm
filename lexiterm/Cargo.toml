@@ -2,7 +2,7 @@
 name = "lexiterm"
 version = "0.1.0"
 edition = "2021"
-description = "A scabble solver app that runs on the terminal with a TUI."
+description = "A scrabble solver app that runs on the terminal with a TUI."
 
 [dependencies]
 anyhow = "1.0.97"

@@ -1,8 +1,13 @@
 name: Security audit
+
 on:
   # every midnight, UTC
   schedule:
     - cron: '0 0 * * *'
+  
+  branches:
+    - main
+    - release/*
 
   # every time a Cargo.toml or Cargo.lock is updated
   push:

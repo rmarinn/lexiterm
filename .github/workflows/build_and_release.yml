@@ -1,0 +1,222 @@
+name: Build & Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+
+
+jobs:
+  generate-changelog:
+    name: Generate changelog
+    runs-on: ubuntu-22.04
+    outputs:
+      RELEASE_VERSION: ${{ steps.get-version.outputs.RELEASE_VERSION }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get release version
+        id: get-version
+        shell: bash
+        run: |
+          version=$(grep '^version' lexiterm/Cargo.toml | head -n1 | sed 's/version *= *"\(.*\)"/\1/')
+          echo "RELEASE_VERSION=$version" >> $GITHUB_OUTPUT
+
+      - name: Generate a changelog
+        uses: orhun/git-cliff-action@main
+        with:
+          config: cliff.toml
+          args: -vv --no-exec --github-repo ${{ github.repository }}
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Check changelog content before uploading
+        shell: bash
+        run: cat CHANGELOG.md
+
+      - name: Upload the changelog
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: CHANGELOG.md
+          if-no-files-found: error
+
+  build-artifacts:
+    name: Build artifacts
+    needs: generate-changelog
+    runs-on: ${{ matrix.build.OS }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        build:
+          - {
+              NAME: linux-x64-musl,
+              OS: ubuntu-22.04,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-unknown-linux-musl,
+            }
+          - {
+              NAME: win32-x64-msvc,
+              OS: windows-2022,
+              TOOLCHAIN: stable,
+              TARGET: x86_64-pc-windows-msvc,
+            }
+
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Set release version in the env
+        shell: bash
+        run: |
+          echo "RELEASE_VERSION=${{ needs.generate-changelog.outputs.RELEASE_VERSION }}"
+          echo "RELEASE_VERSION=${{ needs.generate-changelog.outputs.RELEASE_VERSION }}" >> $GITHUB_ENV
+  
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ "${{ matrix.build.NAME }}" = *"-musl" ]; then
+            sudo apt update
+            sudo apt install -y --no-install-recommends musl-tools
+          fi
+
+      - name: Install the Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.build.TOOLCHAIN }}
+          target: ${{ matrix.build.TARGET }}
+          cache: false
+          rustflags: ""
+
+      - name: Build (linux)
+        if: matrix.build.OS != 'windows-2022'
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: false
+          command: build
+          args: --locked --release --target ${{ matrix.build.TARGET }}
+
+      - name: Build (windows)
+        if: matrix.build.OS == 'windows-2022'
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --locked --release --target ${{ matrix.build.TARGET }}
+
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          mkdir -p release/
+          cp {LICENSE,README.md} release/
+          bin='lexiterm'
+          if [ "${{ matrix.build.OS }}" = "windows-2022" ]; then
+            bin="${bin}.exe"
+          fi
+          cp "target/${{ matrix.build.TARGET }}/release/${bin}" release/
+          mv release/ lexiterm-${{ env.RELEASE_VERSION }}/
+
+      - name: Create release artifacts
+        shell: bash
+        run: |
+          if [ "${{ matrix.build.OS }}" = "windows-2022" ]; then
+            7z a -tzip "lexiterm-${{ env.RELEASE_VERSION }}-${{ matrix.build.TARGET }}.zip" \
+              lexiterm-${{ env.RELEASE_VERSION }}/
+          else
+            tar -czvf lexiterm-${{ env.RELEASE_VERSION }}-${{ matrix.build.TARGET }}.tar.gz \
+              lexiterm-${{ env.RELEASE_VERSION }}/
+          fi
+
+      - name: List artifacts
+        shell: bash
+        run: |
+          ls -la
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexiterm-${{ matrix.build.TARGET }}
+          path: lexiterm-${{ env.RELEASE_VERSION }}-${{ matrix.build.TARGET }}.*
+          if-no-files-found: error
+
+  release-github:
+    name: Release to GitHub
+    runs-on: ubuntu-22.04
+    needs: 
+      - build-artifacts
+      - generate-changelog
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: lexiterm-*
+          merge-multiple: true
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: *.txt
+          merge-multiple: true
+
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+
+      - name: Check downloaded changelog content
+        shell: bash
+        run: cat CHANGELOG.md
+
+      - name: calculate SHA256 checksums
+        shell: bash
+        run: |
+          for i in lexiterm-*; do
+            sha256sum "$i" >> "$i".sha256
+          done
+
+      - name: Draft GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body_path: CHANGELOG.md
+          files: |
+            lexiterm-*
+            *.txt
+
+  push-to-release-branch:
+    name: Push to Release Branch
+    runs-on: ubuntu-22.04
+    needs: 
+      - generate-changelog
+      - release-github
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: lexiterm-*
+          merge-multiple: true
+
+      - name: Push to a release branch
+        shell: bash
+        run: |
+          VERSION=${{ needs.generate-changelog.outputs.RELEASE_VERSION }}
+          BRANCH=releases/v$(echo "$VERSION" | sed 's/[0-9]\+$/x/')
+          git branch "$BRANCH"
+          echo "pushing to $VERSION to $BRANCH"
+          git push origin "$BRANCH"

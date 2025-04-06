@@ -1,21 +1,31 @@
-name: Rust
+name: Rust Tests
 
 on:
   push:
     branches:
       - main
+
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
       - main
+      - releases/*
+
+# ensure that the workflow is only triggered once per PR, subsequent pushes to the PR 
+# will cancel and restart the workflow. 
+# See: https://docs.github.com/en/actions/using-jobs/using-concurrency
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   test:
-    name: Test
+    name: Rust Tests
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -41,7 +51,7 @@ jobs:
         run: cargo fmt --check
 
   clippy:
-    name: Clippy
+    name: Rust Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +64,7 @@ jobs:
         run: cargo clippy -- -D warnings
 
   coverage:
-    name: Code coverage
+    name: LLVM Code coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
