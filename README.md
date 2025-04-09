@@ -9,18 +9,12 @@ Lexiterm is a terminal-based TUI tool for searching words given a set of letters
 You can use Lexiterm to search with powerful Regex patterns like:
 
 1. **Words that start with an `S` and end with an `e`:**  
-   Regex: `^s.*e$`  
-   _Matches examples like `spare`, `scale`, `settle`_  
    ![Starts with S and ends with E](./assets/lexiterm-demo-regex-1.gif)
 
 2. **Words that contain the letters `cl` together:**  
-   Regex: `cl`  
-   _Matches examples like `clear`, `clash`, `decline`_  
    ![Contains CL](./assets/lexiterm-demo-regex-2.gif)
 
 3. **Words with an `r` and an `s` separated by exactly 3 letters:**  
-   Regex: `r.{3}s`  
-   _Matches examples like `rails`, `rents`, `reaps`_  
    ![R...S](./assets/lexiterm-demo-regex-3.gif)
 
 4. **And much more...**  
