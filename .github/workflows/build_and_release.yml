@@ -36,10 +36,6 @@ jobs:
         env:
           OUTPUT: CHANGELOG.md
 
-      - name: Check changelog content before uploading
-        shell: bash
-        run: cat CHANGELOG.md
-
       - name: Upload the changelog
         uses: actions/upload-artifact@v4
         with:
@@ -116,7 +112,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release/
-          cp {LICENSE,README.md} release/
+          cp {LICENSE,README.md,words.txt,char_scores.txt} release/
           bin='lexiterm'
           if [ "${{ matrix.build.OS }}" = "windows-2022" ]; then
             bin="${bin}.exe"
@@ -147,7 +143,7 @@ jobs:
           path: lexiterm-${{ env.RELEASE_VERSION }}-${{ matrix.build.TARGET }}.*
           if-no-files-found: error
 
-  release-github:
+  draft-github-release:
     name: Release to GitHub
     runs-on: ubuntu-22.04
     needs: 
@@ -159,12 +155,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: lexiterm-*
-          merge-multiple: true
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: *.txt
           merge-multiple: true
 
       - name: Download changelog
@@ -193,14 +183,13 @@ jobs:
           body_path: CHANGELOG.md
           files: |
             lexiterm-*
-            *.txt
 
   push-to-release-branch:
     name: Push to Release Branch
     runs-on: ubuntu-22.04
     needs: 
       - generate-changelog
-      - release-github
+      - draft-github-release
 
     steps:
       - name: Checkout
