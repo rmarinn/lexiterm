@@ -52,10 +52,6 @@ impl AppManager {
         self.state.output_words = words;
     }
 
-    pub fn is_letters_valid(&self) -> bool {
-        self.state.input_letters.len() > 1
-    }
-
     pub fn is_regex_valid(&self) -> bool {
         let expr = &self.state.input_regex;
         expr.is_empty() || Regex::new(expr).is_ok()

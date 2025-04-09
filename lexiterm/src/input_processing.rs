@@ -91,7 +91,7 @@ impl AppManager {
             return Ok(false);
         }
 
-        if !self.is_letters_valid() || !self.is_regex_valid() {
+        if !self.is_regex_valid() {
             return Ok(false);
         }
 
